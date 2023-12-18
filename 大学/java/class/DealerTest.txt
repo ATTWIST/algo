@@ -1,0 +1,13 @@
+package bjgame;
+
+import javax.swing.JFrame;
+
+public class DealerTest
+{
+   public static void main( String[] args )
+   {
+      Dealer application = new Dealer(); // 서버생성
+      application.setDefaultCloseOperation( JFrame.EXIT_ON_CLOSE );
+      application.runDeal(); 
+   } 
+} 

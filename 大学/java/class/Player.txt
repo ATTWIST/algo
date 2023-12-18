@@ -1,0 +1,196 @@
+package bjgame;
+
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.awt.BorderLayout;
+import java.awt.GridLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+import javax.swing.JButton;
+import javax.swing.JFrame;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
+
+public class Player extends JFrame 
+{
+	private JButton Hit;
+	private JButton Stay;
+	private JPanel buttons;
+	private JTextArea displayArea; 
+	private ObjectOutputStream output; 
+	private ObjectInputStream input; 
+	private String message = ""; 
+	private String chatServer; 
+	private Socket client; 
+	private int cardamt=0;
+	public Player( String host )
+	{
+		super( "Player" );
+
+		chatServer = host; 
+
+		buttons = new JPanel();
+		buttons.setLayout(new GridLayout(1,2));
+		Hit = new JButton("Hit");
+		Stay = new JButton("Stay");
+		
+		Hit.addActionListener(
+				new ActionListener() 
+				{
+					
+					public void actionPerformed( ActionEvent event )
+					{
+						sendData( "hit" );
+					} 
+				} 
+				); 
+		
+		Stay.addActionListener(
+				new ActionListener() 
+				{
+					
+					public void actionPerformed( ActionEvent event )
+					{
+						sendData( "stay" );
+					} 
+				} 
+				); 
+
+		buttons.add(Hit, BorderLayout.SOUTH);
+		buttons.add(Stay, BorderLayout.SOUTH);
+		buttons.setVisible(true);
+		add(buttons,BorderLayout.SOUTH);
+		displayArea = new JTextArea(); 
+		add( new JScrollPane( displayArea ), BorderLayout.CENTER );
+
+		setSize( 300, 300 ); 
+		setVisible( true ); 
+	} 
+
+	public void runClient() 
+	{
+		try 
+		{
+			connectToServer(); 
+			getStreams(); 
+			processConnection(); 
+		} 
+		catch ( EOFException eofException ) 
+		{
+			displayMessage( "\n클라이언트 연결 끊김" );
+		} 
+		catch ( IOException ioException ) 
+		{} 
+		finally 
+		{
+			closeConnection(); 
+		} 
+	} 
+	
+	private void connectToServer() throws IOException
+	{      
+		displayMessage( "연결 시도\n" );
+
+		
+		client = new Socket( InetAddress.getByName( chatServer ), 23555 );
+
+		
+		displayMessage( "연결: " + 
+				client.getInetAddress().getHostName() );
+	} 
+
+	
+	private void getStreams() throws IOException
+	{
+		
+		output = new ObjectOutputStream( client.getOutputStream() );      
+		output.flush(); 
+
+		
+		input = new ObjectInputStream( client.getInputStream() );
+
+		displayMessage( "\n입력 받음" );
+	} 
+
+	
+	private void processConnection() throws IOException
+	{
+
+
+		do 
+		{ 
+			try 
+			{
+				message = ( String ) input.readObject(); 
+				displayMessage( "\n" + message ); 
+				if (message.contains("Bust!") || message.contains("기다려주세요")){
+					buttons.setVisible(false);				
+				}
+				
+			} 
+			catch ( ClassNotFoundException classNotFoundException ) 
+			{
+				displayMessage( "\nxx" );
+			} 
+
+		} while ( !message.equals( "xxx" ) );
+	} 
+
+	
+	private void closeConnection() 
+	{
+		displayMessage( "\n연결 닫음" );
+		
+
+		try 
+		{
+			output.close(); 
+			input.close();
+			client.close(); 
+		} 
+		catch ( IOException ioException ) 
+		{} 
+	} 
+
+	
+	private void sendData( String message )
+	{
+		try 
+		{
+			output.writeObject(  message );
+			output.flush(); 
+			
+		} 
+		catch ( IOException ioException )
+		{
+			displayArea.append( "\n에러 작성" );
+		} 
+	} 
+
+	
+	private void displayMessage( final String messageToDisplay )
+	{
+		SwingUtilities.invokeLater(
+				new Runnable()
+				{
+					public void run() 
+					{
+						displayArea.append( messageToDisplay );
+					} 
+				}  
+				); 
+	} 
+
+
+	
+
+	
+}

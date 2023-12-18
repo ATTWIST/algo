@@ -1,0 +1,364 @@
+package bjgame;
+
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.awt.BorderLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+import javax.swing.JButton;
+import javax.swing.JFrame;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
+
+public class Dealer extends JFrame {
+
+	private JButton Deal;
+	private Deck newdeck;
+	private JTextArea displayArea; // 유저정보 보여줌
+	private ExecutorService executor; // 플레이어실행
+	private ServerSocket server; // 서버소켓
+	private SockServer[] sockServer; 
+	private int counter = 1; 
+	private String dcard1,dcard2;
+	private ArrayList<Playbj> players;
+	private Playbj dcards;
+	private int playersleft;
+	private boolean roundover = true;
+
+
+	public Dealer() {
+
+		super( "Dealer" );
+
+
+		players = new ArrayList();
+		sockServer = new SockServer[ 100 ]; 
+		executor = Executors.newFixedThreadPool(100); // 스레드풀생성
+
+
+		Deal = new JButton("카드 딜");
+
+		Deal.addActionListener(
+				new ActionListener() 
+				{
+					
+					public void actionPerformed( ActionEvent event )
+					{
+						Deal.setEnabled(false);
+						newdeck = new Deck();
+						roundover=false;
+						DealCards();
+						displayMessage("\n\n카드 딜\n\n");
+
+					} 
+				} 
+				); 
+
+
+		add(Deal,BorderLayout.SOUTH);
+
+		displayArea = new JTextArea(); 
+		displayArea.setEditable(false);
+		add( new JScrollPane( displayArea ), BorderLayout.CENTER );
+
+		setSize( 300, 300 ); 
+		setVisible( true ); 
+	} 
+
+	
+	public void runDeal()
+	{
+		try 
+		{
+			server = new ServerSocket( 23555, 100 ); // 소켓서버 생성
+
+			while ( true ) 
+			{
+				try 
+				{
+					
+					sockServer[counter] = new SockServer(counter);
+					
+					sockServer[counter].waitForConnection();
+					
+					executor.execute(sockServer[ counter ]);
+					
+
+				} 
+				catch ( EOFException eofException ) 
+				{
+					displayMessage( "\nServer terminated connection" );
+				} 
+				finally 
+				{
+					++counter;
+				} 
+			} 
+		} 
+		catch ( IOException ioException ) 
+		{} 
+	} 
+
+	
+	private void displayMessage( final String messageToDisplay )
+	{
+		SwingUtilities.invokeLater(
+				new Runnable() 
+				{
+					public void run() 
+					{
+						displayArea.append( messageToDisplay ); 
+					} 
+				} 
+				); 
+	} 
+
+	private void DealCards(){
+
+		try{
+			playersleft = counter-1;
+			newdeck.shuffle();
+			dcard1 = newdeck.dealCard();
+			dcard2 = newdeck.dealCard();
+			displayMessage("\n\n" +dcard1 + " " +dcard2);
+
+			for (int i=1;i<= counter;i++) {
+				String c1,c2;
+				c1 = newdeck.dealCard();
+				c2 = newdeck.dealCard();
+				Playbj p = new Playbj(c1,c2);
+				players.add(p);
+				sockServer[i].sendData("카드를 받았습니다:\n" + c1 + " " + c2);
+				sockServer[i].sendData("토탈: " +  p.GetCardTotal());
+
+			}
+		}
+		catch(NullPointerException n){}
+	}
+
+	private void Results() {
+
+		try{
+			for (int i=1;i<= counter;i++) {
+				sockServer[i].sendData("딜러의 토탈 " + dcards.GetCardTotal());
+
+				if( (dcards.GetCardTotal() <= 21) && (players.get(i-1).GetCardTotal() <= 21 ) ){
+
+					if (dcards.GetCardTotal() > players.get(i-1).GetCardTotal()) {
+						sockServer[i].sendData("\n 패배!");
+					}
+
+					if (dcards.GetCardTotal() < players.get(i-1).GetCardTotal()) {
+						sockServer[i].sendData("\n 승리!");
+					}
+
+					if (dcards.GetCardTotal() == players.get(i-1).GetCardTotal()) {
+						sockServer[i].sendData("\n xx");
+					}				
+
+				}
+
+				if(dcards.CheckBust()){
+					
+					if(players.get(i-1).CheckBust()){
+						sockServer[i].sendData("\n xx");
+					}
+					if(players.get(i-1).GetCardTotal() <= 21){
+						sockServer[i].sendData("\n 승리!");
+					}
+				}
+
+				if(players.get(i-1).CheckBust() && dcards.GetCardTotal() <= 21){
+					sockServer[i].sendData("\n 패배!");
+				}
+			}
+			
+
+
+		}
+		catch(NullPointerException n){}
+	}
+
+	
+	private class SockServer implements Runnable
+	{
+		private ObjectOutputStream output; 
+		private ObjectInputStream input; 
+		private Socket connection; 
+		private int myConID;
+
+		public SockServer(int counterIn)
+		{
+			myConID = counterIn;
+		}
+
+		public void run() {
+			try {
+				try {
+					getStreams(); 
+					processConnection(); 
+
+				} 
+				catch ( EOFException eofException ) 
+				{
+					displayMessage( "\n서버" + myConID + " 연결 끊김" );
+				}
+				finally
+				{
+					closeConnection(); 
+				}
+			} 
+			catch ( IOException ioException ) 
+			{} 
+		} 
+
+		
+		private void waitForConnection() throws IOException
+		{
+
+			displayMessage( "연결 대기중" + myConID + "\n" );
+			connection = server.accept();             
+			displayMessage( "연결 " + myConID + " 받음: " +
+					connection.getInetAddress().getHostName() );
+		} 
+
+		private void getStreams() throws IOException
+		{
+			
+			output = new ObjectOutputStream( connection.getOutputStream() );
+			output.flush(); 
+
+			
+			input = new ObjectInputStream( connection.getInputStream() );
+
+			displayMessage( "\n입력 받음\n" );
+		} 
+
+		
+		private void processConnection() throws IOException
+		{
+			String message = "연결 " + myConID + " 성공";
+			sendData( message ); 
+
+
+			do 
+			{ 
+				try 
+				{
+					if(message.contains("hit")){				
+						cardhit();
+					}
+
+					if(message.contains("stay")){
+						this.sendData("기다려주세요");
+						playersleft--;
+						CheckDone();
+					}
+
+
+					message = ( String ) input.readObject(); // read new message
+
+				} 
+				catch ( ClassNotFoundException classNotFoundException ) 
+				{
+					displayMessage( "\n모르는 타입 받음" );
+				}
+
+			} while ( !message.equals( "클라이언트 끊김" ) );
+		} 
+
+
+		private void DealerGo() {		
+			dcards = new Playbj(dcard1,dcard2);
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+			if (dcards.GetCardTotal() < 16){
+				while(dcards.GetCardTotal() < 16){
+					String card1 = newdeck.dealCard();
+					dcards.CardHit(card1);
+					displayMessage("딜러 히트" + card1 +  "\n" + "토탈:" + dcards.GetCardTotal() + "\n");				
+				}
+			}
+			if(dcards.CheckBust()){
+				displayMessage("딜러버스트!");
+			}
+			else{
+				displayMessage("딜러 보유" + " " + dcards.GetCardTotal());
+			}
+
+			Results();
+		}
+
+		private void cardhit() {
+
+			String nextc = newdeck.dealCard();
+			sendData(nextc);
+			players.get(this.myConID -1).CardHit(nextc);
+			sendData("토탈: " +  players.get(this.myConID -1).GetCardTotal());
+			if(players.get(this.myConID -1).CheckBust()) {		
+				sendData("버스트!\n");		
+				playersleft--;
+				if(playersleft==0){
+					DealerGo();
+				}
+			}
+
+
+		}
+
+
+		private void CheckDone() {
+
+			if(playersleft==0){
+
+				DealerGo();
+			}
+		}
+
+		
+		private void closeConnection() 
+		{
+			displayMessage( "\n연결 끊김 " + myConID + "\n" );
+
+			try 
+			{
+				output.close(); 
+				input.close(); 
+				connection.close(); 
+			} 
+			catch ( IOException ioException ) 
+			{} 
+		} 
+
+		private void sendData( String message )
+		{
+			try 
+			{
+				output.writeObject( message );
+				output.flush(); 
+
+			} 
+			catch ( IOException ioException ) 
+			{
+				displayArea.append( "\n에러" );
+			} 
+		} 
+
+
+	} 
+
+
+} 
