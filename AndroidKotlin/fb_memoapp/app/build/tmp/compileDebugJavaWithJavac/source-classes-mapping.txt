@@ -1,0 +1,2 @@
+com/bokchi/fb_firebase_email_password_auth/BuildConfig.java
+ com.bokchi.fb_firebase_email_password_auth.BuildConfig
