@@ -1,0 +1,67 @@
+import ccxt
+import time
+import pandas as pd
+import numpy as np
+
+class CryptoTradingBot:
+    def __init__(self, exchange, symbol, timeframe='1h'):
+        self.exchange = getattr(ccxt, exchange)()
+        self.symbol = symbol
+        self.timeframe = timeframe
+
+    def fetch_ohlcv(self, limit=100):
+        ohlcv = self.exchange.fetch_ohlcv(self.symbol, self.timeframe, limit=limit)
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        return df
+
+    def calculate_sma(self, data, period):
+        return data['close'].rolling(window=period).mean()
+
+    def generate_signals(self, data, short_period=10, long_period=30):
+        data['short_sma'] = self.calculate_sma(data, short_period)
+        data['long_sma'] = self.calculate_sma(data, long_period)
+        data['signal'] = np.where(data['short_sma'] > data['long_sma'], 1, 0)
+        data['position'] = data['signal'].diff()
+        return data
+
+    def backtest(self, initial_balance=1000):
+        data = self.fetch_ohlcv(limit=500)
+        signals = self.generate_signals(data)
+        
+        balance = initial_balance
+        position = 0
+        for i, row in signals.iterrows():
+            if row['position'] == 1:  # Buy signal
+                position = balance / row['close']
+                balance = 0
+            elif row['position'] == -1:  # Sell signal
+                balance = position * row['close']
+                position = 0
+        
+        final_balance = balance + position * signals.iloc[-1]['close']
+        return (final_balance - initial_balance) / initial_balance * 100
+
+    def run(self):
+        while True:
+            try:
+                data = self.fetch_ohlcv(limit=100)
+                signals = self.generate_signals(data)
+                last_signal = signals.iloc[-1]
+
+                if last_signal['position'] == 1:
+                    print(f"Buy signal at {last_signal['close']}")
+                    # Implement buy logic here
+                elif last_signal['position'] == -1:
+                    print(f"Sell signal at {last_signal['close']}")
+                    # Implement sell logic here
+
+                time.sleep(60)  # Wait for 1 minute before next check
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                time.sleep(60)
+
+if __name__ == "__main__":
+    bot = CryptoTradingBot('binance', 'BTC/USDT')
+    print(f"Backtest result: {bot.backtest():.2f}%")
+    bot.run()
